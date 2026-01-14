@@ -9,6 +9,9 @@ const FEEDBACK_WEBHOOK_URL = process.env.WORKOFLOW_FEEDBACK_WEBHOOK_URL || 'http
 const N8N_BASIC_AUTH_USERNAME = process.env.N8N_BASIC_AUTH_USERNAME;
 const N8N_BASIC_AUTH_PASSWORD = process.env.N8N_BASIC_AUTH_PASSWORD;
 
+// AI Disclaimer - added to all bot responses
+const AI_DISCLAIMER = '\n\n---\n_ℹ️ Dieser Bot ist eine KI und kann Fehler machen. Bitte überprüfe die Antworten._';
+
 // Initialize OpenAI client with Phoenix instrumentation
 // This client is used by the proxy endpoint for N8N requests
 const openaiClient = getOpenAIClient();
@@ -691,13 +694,27 @@ class EchoBot extends ActivityHandler {
                     await sendMessage(context, MessageFactory.text(thinkingMessage, thinkingMessage));
                 }
 
-                // Send typing indicator before webhook call (the slow part)
-                // This ensures users see the bot is "working" while waiting for the response
+                // Start continuous typing indicator that runs until webhook responds
+                // Teams typing indicators only last ~3 seconds, so we need to send them repeatedly
+                let typingInterval = null;
                 if (process.env.LOAD_TEST_MODE !== 'true') {
+                    // Send initial typing indicator
                     context.sendActivity({ type: 'typing' }).catch(() => {});
+                    // Continue sending every 2.5 seconds to keep the animation going
+                    typingInterval = setInterval(() => {
+                        context.sendActivity({ type: 'typing' }).catch(() => {});
+                    }, 2500);
                 }
 
-                const n8nResponse = await axios.post(N8N_WEBHOOK_URL, enrichedPayload, config);
+                let n8nResponse;
+                try {
+                    n8nResponse = await axios.post(N8N_WEBHOOK_URL, enrichedPayload, config);
+                } finally {
+                    // Always clear the typing interval when webhook completes (success or error)
+                    if (typingInterval) {
+                        clearInterval(typingInterval);
+                    }
+                }
 
                 console.log('=== RAW N8N RESPONSE ===');
                 console.log('Type of data:', typeof n8nResponse.data);
@@ -744,11 +761,12 @@ class EchoBot extends ActivityHandler {
                 // Send the response with or without attachment
                 if (attachmentUrl) {
                     // Send the text with a link to the attachment
-                    const replyWithLink = `${n8nReplyText}\n\n📎 [Download attachment](${attachmentUrl})`;
+                    const replyWithLink = `${n8nReplyText}\n\n📎 [Download attachment](${attachmentUrl})${AI_DISCLAIMER}`;
                     await sendMessage(context, MessageFactory.text(replyWithLink, replyWithLink));
                 } else {
                     // Send just the text message
-                    await sendMessage(context, MessageFactory.text(n8nReplyText, n8nReplyText));
+                    const replyWithDisclaimer = `${n8nReplyText}${AI_DISCLAIMER}`;
+                    await sendMessage(context, MessageFactory.text(replyWithDisclaimer, replyWithDisclaimer));
                 }
 
                 // Check if feedback is enabled and we should ask for feedback (first interaction of the day)
@@ -782,7 +800,8 @@ class EchoBot extends ActivityHandler {
 
                 // Check if the error is about file attachments
                 if (error.message && error.message.includes('File attachments')) {
-                    await sendMessage(context, MessageFactory.text('I received a response but cannot send file attachments directly. Please let me know if you need the information in a different format.'));
+                    const fileErrorMsg = `I received a response but cannot send file attachments directly. Please let me know if you need the information in a different format.${AI_DISCLAIMER}`;
+                    await sendMessage(context, MessageFactory.text(fileErrorMsg));
                 } else {
                     // Determine the specific error type based on error details
                     let errorMessage = 'There was an error communicating with the AI agent.\n\n';
@@ -812,6 +831,7 @@ class EchoBot extends ActivityHandler {
                     errorMessage += '• Rate limit reached (too many requests per minute)\n\n';
                     errorMessage += '• Technical issue with the workflow processing\n\n';
                     errorMessage += 'Please try again with a simpler request or contact support if the issue persists.';
+                    errorMessage += AI_DISCLAIMER;
 
                     await sendMessage(context, MessageFactory.text(errorMessage));
                 }
