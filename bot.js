@@ -3,14 +3,12 @@ const { ConnectorClient, MicrosoftAppCredentials } = require('botframework-conne
 const axios = require('axios');
 const { getOpenAIClient } = require('./phoenix');
 const { shouldAskForFeedback, markFeedbackGiven, markUserInteraction, markFeedbackPrompted } = require('./feedback-tracker');
+const { getTranslations, getRandomThinkingPhrase, getDisclaimer } = require('./translations');
 
 const N8N_WEBHOOK_URL = process.env.WORKOFLOW_N8N_WEBHOOK_URL || 'https://workflows.vcec.cloud/webhook/016d8b95-d5a5-4ac6-acb5-359a547f642f';
 const FEEDBACK_WEBHOOK_URL = process.env.WORKOFLOW_FEEDBACK_WEBHOOK_URL || 'https://workflows-stage.vcec.cloud/webhook/a887e442-2c85-4193-b127-24408eaf8b11';
 const N8N_BASIC_AUTH_USERNAME = process.env.N8N_BASIC_AUTH_USERNAME;
 const N8N_BASIC_AUTH_PASSWORD = process.env.N8N_BASIC_AUTH_PASSWORD;
-
-// AI Disclaimer - added to all bot responses
-const AI_DISCLAIMER = '\n\n---\n_ℹ️ Dieser Bot ist eine KI und kann Fehler machen. Bitte überprüfe die Antworten._';
 
 // Initialize OpenAI client with Phoenix instrumentation
 // This client is used by the proxy endpoint for N8N requests
@@ -156,13 +154,14 @@ async function fetchExtendedUserInfo(context, userId) {
 }
 
 // Function to create feedback adaptive card
-function createFeedbackCard() {
+function createFeedbackCard(locale) {
+    const t = getTranslations(locale);
     return CardFactory.adaptiveCard({
         type: 'AdaptiveCard',
         body: [
             {
                 type: 'TextBlock',
-                text: 'How is Workoflow doing this session? (optional)',
+                text: t.feedback.prompt,
                 size: 'Medium',
                 weight: 'Bolder',
                 wrap: true
@@ -171,7 +170,7 @@ function createFeedbackCard() {
         actions: [
             {
                 type: 'Action.Submit',
-                title: '😞 Bad',
+                title: t.feedback.bad,
                 data: {
                     action: 'feedback',
                     rating: 1,
@@ -180,7 +179,7 @@ function createFeedbackCard() {
             },
             {
                 type: 'Action.Submit',
-                title: '😐 Fine',
+                title: t.feedback.fine,
                 data: {
                     action: 'feedback',
                     rating: 2,
@@ -189,7 +188,7 @@ function createFeedbackCard() {
             },
             {
                 type: 'Action.Submit',
-                title: '😊 Good',
+                title: t.feedback.good,
                 data: {
                     action: 'feedback',
                     rating: 3,
@@ -198,7 +197,7 @@ function createFeedbackCard() {
             },
             {
                 type: 'Action.Submit',
-                title: 'Dismiss',
+                title: t.feedback.dismiss,
                 data: {
                     action: 'feedback',
                     rating: 0,
@@ -320,7 +319,8 @@ class EchoBot extends ActivityHandler {
 
                         // Send thank you message
                         if (feedbackData.rating > 0) {
-                            await sendMessage(context, MessageFactory.text('Thank you for your feedback! 🙏'));
+                            const t = getTranslations(context.activity.locale);
+                            await sendMessage(context, MessageFactory.text(t.feedback.thankYou));
                         }
                     } catch (error) {
                         console.error('Error sending feedback to webhook:', error.message);
@@ -579,117 +579,7 @@ class EchoBot extends ActivityHandler {
                 // Send thinking message with magic link before webhook call (personal chats only)
                 // This allows users to configure their bot while waiting for the response
                 if (magicLinkText) {
-                    const thinkingPhrases = [
-                        '🔍 Moment, ich denke nach...',
-                        '🔍 Ich schaue mir das genauer an...',
-                        '🔍 Lass mich kurz überlegen...',
-                        '🔍 Wird bearbeitet...',
-                        '🔍 Ich arbeite an deiner Anfrage...',
-                        '🔍 Hmm, interessante Frage...',
-                        '🔍 Ich analysiere das für dich...',
-                        '🔍 Einen Moment bitte...',
-                        '🔍 Ich prüfe das für dich...',
-                        '🔍 Deine Anfrage wird verarbeitet...',
-                        '🔍 Ich recherchiere...',
-                        '🔍 Bin gleich bei dir...',
-                        '🔍 Ich arbeite daran...',
-                        '🔍 Das schaue ich mir an...',
-                        '🔍 Wird analysiert...',
-                        '🔍 Ich kümmere mich darum...',
-                        '🔍 Einen kleinen Moment...',
-                        '🔍 Ich bin dran...',
-                        '🔍 Deine Nachricht wird bearbeitet...',
-                        '🔍 Ich suche die passende Antwort...',
-                        '🔍 Gleich habe ich etwas für dich...',
-                        '🔍 Ich verarbeite deine Anfrage...',
-                        '🔍 Kurze Analyse läuft...',
-                        '🔍 Ich hole die Informationen...',
-                        '🔍 Daten werden abgerufen...',
-                        '🔍 Ich stelle das zusammen...',
-                        '🔍 Verarbeitung läuft...',
-                        '🔍 Ich bereite die Antwort vor...',
-                        '🔍 Das prüfe ich gerade...',
-                        '🔍 Ich schaue nach...',
-                        '🔍 Anfrage in Bearbeitung...',
-                        '🔍 Ich ermittle die Lösung...',
-                        '🔍 Kurz Geduld bitte...',
-                        '🔍 Ich durchsuche die Daten...',
-                        '🔍 Analyse wird durchgeführt...',
-                        '🔍 Ich finde das heraus...',
-                        '🔍 Bearbeitung startet...',
-                        '🔍 Ich sammle die Informationen...',
-                        '🔍 Deine Frage wird beantwortet...',
-                        '🔍 Ich checke das...',
-                        '🔍 Wird nachgeschlagen...',
-                        '🔍 Ich suche die beste Lösung...',
-                        '🔍 Anfrage wird analysiert...',
-                        '🔍 Ich arbeite an der Antwort...',
-                        '🔍 Das wird geprüft...',
-                        '🔍 Ich schaue in die Daten...',
-                        '🔍 Verarbeitung gestartet...',
-                        '🔍 Ich recherchiere für dich...',
-                        '🔍 Antwort wird vorbereitet...',
-                        '🔍 Ich durchforste die Informationen...',
-                        '🔍 Daten werden analysiert...',
-                        '🔍 Ich ermittle die Antwort...',
-                        '🔍 Wird zusammengestellt...',
-                        '🔍 Ich prüfe die Details...',
-                        '🔍 Anfrage eingegangen...',
-                        '🔍 Ich suche die Antwort...',
-                        '🔍 Das analysiere ich gerade...',
-                        '🔍 Bearbeitung in Gange...',
-                        '🔍 Ich hole mir die Infos...',
-                        '🔍 Wird recherchiert...',
-                        '🔍 Ich schaue das durch...',
-                        '🔍 Daten werden gesammelt...',
-                        '🔍 Ich arbeite an einer Lösung...',
-                        '🔍 Anfrage wird geprüft...',
-                        '🔍 Ich suche die passenden Daten...',
-                        '🔍 Analyse in Bearbeitung...',
-                        '🔍 Ich finde die Antwort...',
-                        '🔍 Wird verarbeitet...',
-                        '🔍 Ich durchsuche die Quellen...',
-                        '🔍 Informationen werden abgerufen...',
-                        '🔍 Ich stelle die Antwort zusammen...',
-                        '🔍 Deine Anfrage läuft...',
-                        '🔍 Ich prüfe alles durch...',
-                        '🔍 Bearbeitung aktiv...',
-                        '🔍 Ich ermittle die besten Ergebnisse...',
-                        '🔍 Wird durchgearbeitet...',
-                        '🔍 Ich schaue mir die Details an...',
-                        '🔍 Daten in Verarbeitung...',
-                        '🔍 Ich suche nach Lösungen...',
-                        '🔍 Analyse wird vorbereitet...',
-                        '🔍 Ich hole die relevanten Daten...',
-                        '🔍 Bearbeitung eingeleitet...',
-                        '🔍 Ich recherchiere die Antwort...',
-                        '🔍 Wird analysiert und geprüft...',
-                        '🔍 Ich sammle die relevanten Infos...',
-                        '🔍 Deine Frage wird geprüft...',
-                        '🔍 Ich arbeite an den Details...',
-                        '🔍 Anfrage wird durchgeführt...',
-                        '🔍 Ich suche die optimale Antwort...',
-                        '🔍 Verarbeitung im Gange...',
-                        '🔍 Ich checke die Informationen...',
-                        '🔍 Daten werden verarbeitet...',
-                        '🔍 Ich schaue mir alles an...',
-                        '🔍 Anfrage in Analyse...',
-                        '🔍 Ich bereite alles vor...',
-                        '🔍 Wird durchsucht...',
-                        '🔍 Ich finde die passende Lösung...',
-                        '🔍 Bearbeitung wird fortgesetzt...',
-                        '🔍 Ich prüfe die Anfrage...',
-                        '🔍 Daten werden durchsucht...',
-                        '🔍 Ich ermittle die Informationen...',
-                        '🔍 Analyse gestartet...',
-                        '🔍 Ich hole die Antwort...',
-                        '🔍 Bearbeitung läuft weiter...',
-                        '🔍 Ich durchforste die Daten...',
-                        '🔍 Wird ausgewertet...',
-                        '🔍 Ich suche die Ergebnisse...',
-                        '🔍 Anfrage wird beantwortet...'
-                    ];
-                    const randomPhrase = thinkingPhrases[Math.floor(Math.random() * thinkingPhrases.length)];
+                    const randomPhrase = getRandomThinkingPhrase(context.activity.locale);
                     const thinkingMessage = `${randomPhrase}${magicLinkText}`;
                     await sendMessage(context, MessageFactory.text(thinkingMessage, thinkingMessage));
                 }
@@ -724,7 +614,8 @@ class EchoBot extends ActivityHandler {
                     console.log('data.output:', n8nResponse.data.output);
                 }
 
-                let n8nReplyText = 'Sorry, I could not get a response from the agent.';
+                const noResponseT = getTranslations(context.activity.locale);
+                let n8nReplyText = noResponseT.errors.noResponse;
                 let attachmentUrl = null;
 
                 // Handle the response structure - n8n returns output as stringified JSON
@@ -759,13 +650,14 @@ class EchoBot extends ActivityHandler {
                 }
 
                 // Send the response with or without attachment
+                const disclaimer = getDisclaimer(context.activity.locale);
                 if (attachmentUrl) {
                     // Send the text with a link to the attachment
-                    const replyWithLink = `${n8nReplyText}\n\n📎 [Download attachment](${attachmentUrl})${AI_DISCLAIMER}`;
+                    const replyWithLink = `${n8nReplyText}\n\n📎 [Download attachment](${attachmentUrl})${disclaimer}`;
                     await sendMessage(context, MessageFactory.text(replyWithLink, replyWithLink));
                 } else {
                     // Send just the text message
-                    const replyWithDisclaimer = `${n8nReplyText}${AI_DISCLAIMER}`;
+                    const replyWithDisclaimer = `${n8nReplyText}${disclaimer}`;
                     await sendMessage(context, MessageFactory.text(replyWithDisclaimer, replyWithDisclaimer));
                 }
 
@@ -782,7 +674,7 @@ class EchoBot extends ActivityHandler {
                         markFeedbackPrompted(userId);
 
                         // Send feedback card
-                        const feedbackCard = createFeedbackCard();
+                        const feedbackCard = createFeedbackCard(context.activity.locale);
                         await sendMessage(context, { attachments: [feedbackCard] });
 
                         console.log(`[FEEDBACK DEBUG] Feedback card sent to user: ${context.activity.from.name} (${userId})`);
@@ -799,39 +691,34 @@ class EchoBot extends ActivityHandler {
                 }
 
                 // Check if the error is about file attachments
+                const errorDisclaimer = getDisclaimer(context.activity.locale);
+                const t = getTranslations(context.activity.locale);
                 if (error.message && error.message.includes('File attachments')) {
-                    const fileErrorMsg = `I received a response but cannot send file attachments directly. Please let me know if you need the information in a different format.${AI_DISCLAIMER}`;
+                    const fileErrorMsg = `${t.errors.fileAttachment}${errorDisclaimer}`;
                     await sendMessage(context, MessageFactory.text(fileErrorMsg));
                 } else {
                     // Determine the specific error type based on error details
-                    let errorMessage = 'There was an error communicating with the AI agent.\n\n';
+                    let errorMessage = t.errors.communicationError;
 
                     // Check for timeout errors (axios timeout or proxy timeout)
                     if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' ||
                         (error.response && (error.response.status === 504 || error.response.status === 408))) {
-                        errorMessage += '⏱️ **Request Timeout**: Your request took more than 60 seconds and was automatically cancelled.\n';
-                        errorMessage += 'We are working on improving this limitation.\n\n';
+                        errorMessage += t.errors.timeout;
                     }
 
                     // Check for rate limit errors
                     if (error.response && error.response.status === 429) {
-                        errorMessage += '⚠️ **Rate Limit**: The allowed token limit per minute has been reached (check status line value RLT).\n';
-                        errorMessage += 'Please wait a moment before trying again.\n\n';
+                        errorMessage += t.errors.rateLimit;
                     }
 
                     // Check for workflow/technical errors
                     if (error.response && error.response.status >= 500) {
-                        errorMessage += '🔧 **Technical Issue**: The workflow behind your request may have failed.\n';
-                        errorMessage += 'This could be a temporary issue with the backend services.\n\n';
+                        errorMessage += t.errors.technical;
                     }
 
                     // Add general troubleshooting message
-                    errorMessage += 'Possible causes:\n\n';
-                    errorMessage += '• Requests exceeding 60 seconds are cancelled due to proxy timeout\n\n';
-                    errorMessage += '• Rate limit reached (too many requests per minute)\n\n';
-                    errorMessage += '• Technical issue with the workflow processing\n\n';
-                    errorMessage += 'Please try again with a simpler request or contact support if the issue persists.';
-                    errorMessage += AI_DISCLAIMER;
+                    errorMessage += t.errors.troubleshooting;
+                    errorMessage += errorDisclaimer;
 
                     await sendMessage(context, MessageFactory.text(errorMessage));
                 }

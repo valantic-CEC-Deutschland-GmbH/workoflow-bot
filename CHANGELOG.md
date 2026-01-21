@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-01-21
+
+### Added
+- Multi-language support (English and German) based on MS Teams client locale
+  - New `translations.js` module with all UI strings in both languages
+  - 108 thinking phrases translated to English
+  - Feedback card, error messages, and AI disclaimer localized
+  - Auto-detects language from `context.activity.locale`
+  - Defaults to English for unsupported locales
+
 ## 2025-12-12
 
 ### Fixed
