@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-01-22
+
+### Added
+- Session management commands for MS Teams conversations
+  - `/new` or `/reset` - Start a fresh conversation (clears AI memory)
+  - `/help` - Show available commands
+- Session tracking sends session ID to N8N for memory scoping
+
 ## 2026-01-21
 
 ### Added

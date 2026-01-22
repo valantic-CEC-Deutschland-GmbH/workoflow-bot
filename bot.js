@@ -19,6 +19,30 @@ if (!openaiClient) {
 
 console.log('N8N_WEBHOOK_URL:', N8N_WEBHOOK_URL);
 
+// Session management - maps conversationId to current sessionId
+const crypto = require('crypto');
+const sessionTracker = new Map();
+
+function getOrCreateSession(conversationId, forceNew = false) {
+    let isNewSession = false;
+    if (forceNew || !sessionTracker.has(conversationId)) {
+        const sessionId = crypto.randomUUID();
+        sessionTracker.set(conversationId, {
+            sessionId,
+            createdAt: new Date().toISOString(),
+            messageCount: 0
+        });
+        isNewSession = true;
+    }
+    const session = sessionTracker.get(conversationId);
+    session.messageCount++;
+    return { ...session, isNewSession };
+}
+
+function resetSession(conversationId) {
+    return getOrCreateSession(conversationId, true);
+}
+
 // Helper function to send messages - skips actual sending in load test mode (avoids Bot Framework auth)
 // Returns the sent message for logging/testing purposes
 async function sendMessage(context, message) {
@@ -330,6 +354,34 @@ class EchoBot extends ActivityHandler {
                     return;
                 }
 
+                // Handle session commands (/new, /reset, /help)
+                const messageText = (context.activity.text || '').trim().toLowerCase();
+
+                if (messageText === '/new' || messageText === '/reset') {
+                    const session = resetSession(context.activity.conversation.id);
+
+                    console.log(`[SESSION] Reset session for conversation ${context.activity.conversation.id}, new sessionId: ${session.sessionId}`);
+
+                    // Send confirmation to user
+                    await sendMessage(context, MessageFactory.text(
+                        '**New session started**\n\nI\'ve cleared my memory. What would you like to work on?'
+                    ));
+
+                    await next();
+                    return;
+                }
+
+                if (messageText === '/help') {
+                    await sendMessage(context, MessageFactory.text(
+                        '**Available Commands:**\n\n' +
+                        '`/new` or `/reset` - Start a fresh conversation (clears AI memory)\n' +
+                        '`/help` - Show this help message'
+                    ));
+
+                    await next();
+                    return;
+                }
+
                 // Comprehensive logging to understand the activity structure
                 console.log('=== FULL ACTIVITY OBJECT ===');
                 console.log(JSON.stringify(context.activity, null, 2));
@@ -501,6 +553,9 @@ class EchoBot extends ActivityHandler {
                     };
                 }
 
+                // Get or create session for this conversation
+                const session = getOrCreateSession(context.activity.conversation.id);
+
                 // Always enrich with custom data (using already-fetched extendedUserInfo)
                 // Initialize custom data with common properties
                 let customData = {
@@ -514,7 +569,13 @@ class EchoBot extends ActivityHandler {
                         tenantId: context.activity.conversation.tenantId,
                         isGroup: context.activity.conversation.isGroup || false
                     },
-                    enrichmentTimestamp: new Date().toISOString()
+                    enrichmentTimestamp: new Date().toISOString(),
+                    session: {
+                        sessionId: session.sessionId,
+                        createdAt: session.createdAt,
+                        messageCount: session.messageCount,
+                        isNewSession: session.isNewSession
+                    }
                 };
 
                 // Additional enrichment for thread replies
@@ -544,7 +605,10 @@ class EchoBot extends ActivityHandler {
                 console.log('[ENRICHMENT] Custom data prepared:', {
                     isThreadReply: customData.isThreadReply,
                     hasUserInfo: !!extendedUserInfo,
-                    hasConversationDetails: !!customData.conversationDetails
+                    hasConversationDetails: !!customData.conversationDetails,
+                    sessionId: customData.session.sessionId,
+                    isNewSession: customData.session.isNewSession,
+                    messageCount: customData.session.messageCount
                 });
 
                 // Create enriched payload for n8n
