@@ -4,6 +4,8 @@ const Redis = require('ioredis');
 const REDIS_URL = process.env.REDIS_URL || 'redis://redis:6379';
 const KEY_PREFIX = 'feedback:';
 const TTL_SECONDS = 2 * 24 * 60 * 60; // 2 days — auto-cleanup via Redis TTL
+// 0 = ask on every prompt (unlimited), N = ask at most N times per day
+const FEEDBACK_LEVEL = parseInt(process.env.FEEDBACK_LEVEL, 10) || 0;
 
 let redis;
 
@@ -62,16 +64,19 @@ async function setRecord(userId, record) {
 async function shouldAskForFeedback(userId) {
     if (!userId) return false;
 
+    // 0 = unlimited — always ask
+    if (FEEDBACK_LEVEL === 0) return true;
+
     const today = getTodayDate();
     const userRecord = await getRecord(userId);
 
-    console.log(`[FEEDBACK DEBUG] shouldAskForFeedback userId: ${userId}, date: ${today}, record:`, userRecord);
+    console.log(`[FEEDBACK DEBUG] shouldAskForFeedback userId: ${userId}, date: ${today}, level: ${FEEDBACK_LEVEL}, record:`, userRecord);
 
     if (!userRecord || userRecord.date !== today) {
         return true;
     }
 
-    return !userRecord.feedbackPrompted && !userRecord.feedbackGiven;
+    return (userRecord.promptCount || 0) < FEEDBACK_LEVEL;
 }
 
 // Mark that feedback was given (or dismissed) by a user
@@ -81,10 +86,13 @@ async function markFeedbackGiven(userId, rating = null) {
     const today = getTodayDate();
     console.log(`[FEEDBACK DEBUG] markFeedbackGiven userId: ${userId}, rating: ${rating}`);
 
+    const existing = await getRecord(userId);
+    const promptCount = (existing && existing.date === today) ? (existing.promptCount || 1) : 1;
+
     await setRecord(userId, {
         date: today,
         feedbackGiven: true,
-        feedbackPrompted: true,
+        promptCount: promptCount,
         rating: rating,
         timestamp: new Date().toISOString()
     });
@@ -120,11 +128,11 @@ async function markFeedbackPrompted(userId) {
         await setRecord(userId, {
             date: today,
             feedbackGiven: false,
-            feedbackPrompted: true,
+            promptCount: 1,
             promptedAt: new Date().toISOString()
         });
     } else {
-        existing.feedbackPrompted = true;
+        existing.promptCount = (existing.promptCount || 0) + 1;
         existing.promptedAt = new Date().toISOString();
         await setRecord(userId, existing);
     }
