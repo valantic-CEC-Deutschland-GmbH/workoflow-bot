@@ -42,7 +42,7 @@ EXPOSE 3978
 # running in the foreground, which is what Docker expects for the main process of a container.
 # `start index.js`: Tells PM2 to start your main application file.
 # `-i max`: Instructs PM2 to launch one process per CPU core for maximum throughput.
-#           Note: In-memory feedback tracking is disabled via FEEDBACK_ENABLED=false for multi-worker compatibility.
+#           Feedback tracking uses Redis for shared state across workers.
 # `--name "n8n-teams-pm-bot"`: Assigns a descriptive name to your application process within PM2.
 #                             This is useful for logging and management with PM2 commands.
 CMD [ "pm2-runtime", "start", "index.js", "-i", "max", "--name", "n8n-teams-pm-bot" ]

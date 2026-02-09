@@ -2,7 +2,7 @@ const { ActivityHandler, MessageFactory, CardFactory, TeamsInfo } = require('bot
 const { ConnectorClient, MicrosoftAppCredentials } = require('botframework-connector');
 const axios = require('axios');
 const { getOpenAIClient } = require('./phoenix');
-const { shouldAskForFeedback, markFeedbackGiven, markUserInteraction, markFeedbackPrompted } = require('./feedback-tracker');
+const { shouldAskForFeedback, markFeedbackGiven, markUserInteraction, markFeedbackPrompted } = require('./feedback-tracker'); // async (Redis-backed)
 const { getTranslations, getRandomThinkingPhrase, getDisclaimer } = require('./translations');
 
 const N8N_WEBHOOK_URL = process.env.WORKOFLOW_N8N_WEBHOOK_URL || 'https://workflows.vcec.cloud/webhook/016d8b95-d5a5-4ac6-acb5-359a547f642f';
@@ -316,7 +316,7 @@ class EchoBot extends ActivityHandler {
                     console.log(`[FEEDBACK DEBUG] Feedback submission from userId: ${userId}`);
 
                     // Mark feedback as given
-                    markFeedbackGiven(userId, feedbackData.rating);
+                    await markFeedbackGiven(userId, feedbackData.rating);
 
                     // Send feedback to webhook
                     try {
@@ -324,6 +324,7 @@ class EchoBot extends ActivityHandler {
                             userId: userId,
                             userName: context.activity.from.name,
                             tenantId: context.activity.conversation.tenantId,
+                            sessionId: context.activity.conversation.id,
                             timestamp: new Date().toISOString(),
                             feedback: {
                                 rating: feedbackData.rating,
@@ -733,9 +734,9 @@ class EchoBot extends ActivityHandler {
                     const userId = context.activity.from.aadObjectId || context.activity.from.id || 'default-user';
                     console.log(`[FEEDBACK DEBUG] Checking feedback for userId: ${userId}, aadObjectId: ${context.activity.from.aadObjectId}, from.id: ${context.activity.from.id}`);
 
-                    if (shouldAskForFeedback(userId)) {
+                    if (await shouldAskForFeedback(userId)) {
                         // Mark that feedback has been prompted to this user
-                        markFeedbackPrompted(userId);
+                        await markFeedbackPrompted(userId);
 
                         // Send feedback card
                         const feedbackCard = createFeedbackCard(context.activity.locale);

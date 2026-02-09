@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## 2026-02-09
+
+### Fixed
+- Feedback tracker now uses Redis instead of in-memory storage, fixing duplicate feedback prompts across PM2 cluster workers
+
+### Changed
+- Added `sessionId` to feedback webhook payload
+
 ## 2026-01-30
 
 ### Changed
