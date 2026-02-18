@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## 2026-02-18
+
+### Added
+- Dynamic tenant-specific webhook URLs — the bot now fetches each tenant's webhook URL from the platform API (`/api/tenant/{uuid}/settings`) instead of using a single shared URL from the `.env` file, enabling true multi-tenancy
+- In-memory cache for tenant settings with configurable TTL (`TENANT_SETTINGS_CACHE_TTL_MS`, default 5 minutes)
+- Graceful fallback to `WORKOFLOW_N8N_WEBHOOK_URL` environment variable when tenant settings are unavailable
+- Clear error message shown to users when their organization's webhook URL is not yet configured
+
 ## 2026-02-09
 
 ### Fixed

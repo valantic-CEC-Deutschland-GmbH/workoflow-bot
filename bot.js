@@ -4,8 +4,9 @@ const axios = require('axios');
 const { getOpenAIClient } = require('./phoenix');
 const { shouldAskForFeedback, markFeedbackGiven, markUserInteraction, markFeedbackPrompted } = require('./feedback-tracker'); // async (Redis-backed)
 const { getTranslations, getRandomThinkingPhrase, getDisclaimer } = require('./translations');
+const { getWebhookUrl } = require('./tenant-settings');
 
-const N8N_WEBHOOK_URL = process.env.WORKOFLOW_N8N_WEBHOOK_URL || 'https://workflows.vcec.cloud/webhook/016d8b95-d5a5-4ac6-acb5-359a547f642f';
+const N8N_WEBHOOK_FALLBACK_URL = process.env.WORKOFLOW_N8N_WEBHOOK_URL || null;
 const FEEDBACK_WEBHOOK_URL = process.env.WORKOFLOW_FEEDBACK_WEBHOOK_URL || 'https://workflows-stage.vcec.cloud/webhook/a887e442-2c85-4193-b127-24408eaf8b11';
 const N8N_BASIC_AUTH_USERNAME = process.env.N8N_BASIC_AUTH_USERNAME;
 const N8N_BASIC_AUTH_PASSWORD = process.env.N8N_BASIC_AUTH_PASSWORD;
@@ -17,7 +18,7 @@ if (!openaiClient) {
     console.warn('[Bot] OpenAI client not initialized. Phoenix tracing disabled.');
 }
 
-console.log('N8N_WEBHOOK_URL:', N8N_WEBHOOK_URL);
+console.log('N8N_WEBHOOK_FALLBACK_URL:', N8N_WEBHOOK_FALLBACK_URL);
 
 // Session management - maps conversationId to current sessionId
 const crypto = require('crypto');
@@ -661,9 +662,25 @@ class EchoBot extends ActivityHandler {
                     }, 2500);
                 }
 
+                // Resolve tenant-specific webhook URL
+                const tenantId = context.activity.conversation.tenantId;
+                let webhookUrl;
+                try {
+                    webhookUrl = await getWebhookUrl(tenantId);
+                } catch (urlError) {
+                    console.error('[Tenant Settings] Failed to resolve webhook URL:', urlError.message);
+                    await sendMessage(context, MessageFactory.text(
+                        '**Configuration Error**\n\nYour organization is not yet configured. ' +
+                        'Please ask your administrator to set up the webhook URL.'
+                    ));
+                    if (typingInterval) clearInterval(typingInterval);
+                    await next();
+                    return;
+                }
+
                 let n8nResponse;
                 try {
-                    n8nResponse = await axios.post(N8N_WEBHOOK_URL, enrichedPayload, config);
+                    n8nResponse = await axios.post(webhookUrl, enrichedPayload, config);
                 } finally {
                     // Always clear the typing interval when webhook completes (success or error)
                     if (typingInterval) {
